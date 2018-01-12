@@ -1,4 +1,5 @@
 # Flasher
+
 Primary aim is to incrementally support different mediatek devices based on data dumps from users of this program.
 I've written it mostly as a PoC initally since SP Flashtool is using proprietary library to do interesting bits.
 
