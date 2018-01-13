@@ -6,6 +6,9 @@
 #include <termios.h>
 #include <stdbool.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 static char *portName = "/dev/ttyACM0";
 static unsigned char buffer[4096];
 static unsigned char commandA = 0xA0; // start comms
@@ -18,8 +21,52 @@ static unsigned char unk4 = 0xD1;
 static unsigned char unk5 = 0xD4;
 static unsigned char unk6 = 0xFE;
 static unsigned char sendDA = 0xD7;
+static unsigned char runProgram = 0xD5;
 
 static int fd = 0;
+
+// returns FD
+int getProgrammer(const char* progLocation, struct stat *statStruct)
+{
+    int progFD = open(progLocation, O_RDONLY);
+
+    fstat(progFD, statStruct);
+
+    return progFD;
+}
+
+// most likely firmware limit on weird bulk size
+void sendBulkData(int programmerFD, unsigned int fileSizes,  size_t maxBulksSize)
+{
+    unsigned int lastPacketSize = fileSizes % maxBulksSize;
+    unsigned int numOfFullSizePackets = (fileSizes - lastPacketSize) / maxBulksSize;
+
+    for (int i = 0; i < numOfFullSizePackets; i++)
+    {
+        if (read(programmerFD, buffer, maxBulksSize) > 0)
+        {
+            if(write(fd, buffer, maxBulksSize) <= 0)
+            {
+                printf("Error: %s\n", strerror(errno));
+                break;
+            }
+        }
+        else
+        {
+            printf("Error: %s\n", strerror(errno));
+            break;
+        }
+
+        usleep(15000); // give SoC time to process
+    }
+
+    read(programmerFD, buffer, lastPacketSize);
+    write(fd, buffer, lastPacketSize);
+
+    usleep(15000);
+
+    close(programmerFD);
+}
 
 // ARM needs data in big endian
 void littleToBig(void* buffer, size_t size)
@@ -135,9 +182,19 @@ int handlePrimarySetup()
     wprint(&someValue4, 1); // again?
     rprint(1); // FE, why 05 previous read
 
-    //D7
+    // get programmer file size
+    struct stat fileSystemStats;
+    int programmerFD = getProgrammer("./MT6735P.bin", &fileSystemStats);
+
+    if (programmerFD <= 0)
+    {
+        printf("Error: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // D7
     unsigned int controlProgramAddress = 0x200000;
-    unsigned int programFullSize = 0x15358;
+    unsigned int programFullSize = (unsigned int)fileSystemStats.st_size; // 0x15358
     unsigned int signatureLength = 0x100;
     wprint(&sendDA, 1);
     rprint(1); // D7
@@ -147,12 +204,22 @@ int handlePrimarySetup()
     littleToBig((unsigned char*)&programFullSize, 4);
     wprint((unsigned char*)&programFullSize, 4);
     rprint(4); // 00 01 53 58
-    littleToBig((unsigned char*)&signatureLength, 4);
+    littleToBig((unsigned char*)&signatureLength, 4); // get rid of signature field
     wprint((unsigned char*)&signatureLength, 4);
     rprint(4); // 00 00 01 00
     rprint(2); // 00 00
 
     // SoC expecting DA transfer until size is matched
+    sendBulkData(programmerFD, (unsigned int)fileSystemStats.st_size, 0x3F0);
+    rprint(2); // BE 8E CRC16 checksum?
+    rprint(2); // 00 00
+
+
+    // D5
+    wprint(&runProgram, 1);
+    rprint(1); // D5
+    rprint(5); // READY, uploaded program should be executing
+
 
     return 0;
 }
@@ -170,15 +237,15 @@ int main()
     newtio.c_cc[VMIN] = 0;
     newtio.c_cc[VTIME] = 1;
 
-    for(int i = 0; i < 15; i++)
+    for(int i = 0; i < 150; i++)
     {
         fd = open(portName, O_RDWR | O_NONBLOCK | O_NOCTTY, 0);
 
         if (fd > 0)
             break;
 
-        sleep(1);
-        printf("Trying to access %s again. \n", portName);
+        usleep(100000);
+        //printf("Trying to access %s again. \n", portName);
     }
 
     if (fd > 0)
