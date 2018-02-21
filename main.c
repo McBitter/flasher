@@ -16,12 +16,13 @@ static unsigned char commandB = 0x0A;
 static unsigned char getChip = 0xFD;
 static unsigned char unk1 = 0x50;
 static unsigned char unk2 = 0x05;
-static unsigned char unk3 = 0xFC;
-static unsigned char unk4 = 0xD1;
-static unsigned char unk5 = 0xD4;
-static unsigned char unk6 = 0xFE;
+static unsigned char getHwSwVer = 0xFC;
+static unsigned char read32 = 0xD1;
+static unsigned char write32 = 0xD4;
+static unsigned char getBLVer = 0xFE;
 static unsigned char sendDA = 0xD7;
 static unsigned char runProgram = 0xD5;
+static unsigned char nsJump = 0xA8; // possibly legacy jump
 
 static int fd = 0;
 
@@ -132,7 +133,7 @@ int handlePrimarySetup()
     rprint(2); // 00 00
 
     // FC
-    wprint(&unk3, 1);
+    wprint(&getHwSwVer, 1);
     rprint(1); // FC
     rprint(2); // 8A 00
     rprint(2); // CA 00
@@ -142,7 +143,7 @@ int handlePrimarySetup()
     // D1
     unsigned int someAddress = 0x10206044;
     unsigned int someValue = 0x1;
-    wprint(&unk4, 1);
+    wprint(&read32, 1);
     rprint(1); // D1
     littleToBig(&someAddress, 4);
     wprint((unsigned char*)&someAddress, 4);
@@ -158,7 +159,7 @@ int handlePrimarySetup()
     unsigned int someAddress2 = 0x10007000;
     unsigned int someValue2 = 0x1;
     unsigned int someValue3 = 0x22000000;
-    wprint(&unk5, 1);
+    wprint(&write32, 1);
     rprint(1); // D4
     littleToBig(&someAddress2, 4);
     wprint((unsigned char*)&someAddress2, 4);
@@ -175,7 +176,7 @@ int handlePrimarySetup()
 
     // FE
     unsigned char someValue4 = 0xFF;
-    wprint(&unk6, 1);
+    wprint(&getBLVer, 1);
     rprint(1); // FE
     wprint(&someValue4, 1);
     rprint(1); // 05
